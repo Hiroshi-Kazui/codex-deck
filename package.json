@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "verify:m0-01": "node --experimental-strip-types --test tests/m0/*.test.ts",
-    "verify:m0-02": "node --experimental-strip-types --test tests/m0/thread.test.ts tests/m0/cli-bridge.test.ts"
+    "verify:m0-02": "node --experimental-strip-types --test tests/m0/thread.test.ts tests/m0/cli-bridge.test.ts",
+    "verify:m0-03": "node --experimental-strip-types --test tests/m0/cli-bridge.test.ts tests/m0/live.test.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

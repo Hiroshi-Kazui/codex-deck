@@ -121,6 +121,7 @@ export type BridgeOptions = {
   env?: NodeJS.ProcessEnv;
   startupTimeoutMs?: number;
   spawnServer?: () => ChildProcess;
+  onProtocolMessage?: (source: 'app-server' | 'tui', message: Readonly<Record<string, unknown>>) => void;
 };
 
 export async function startBridge(options: BridgeOptions): Promise<Bridge> {
@@ -172,10 +173,13 @@ export async function startBridge(options: BridgeOptions): Promise<Bridge> {
   }
   const lines = createInterface({ input: stdout });
   lines.on('line', (line) => {
+    if (closing || failure) return;
     let message: unknown;
     try { message = JSON.parse(line); }
     catch { fail(new BridgeError('App Server sent invalid JSON')); return; }
     if (!object(message)) { fail(new BridgeError('App Server sent a non-object message')); return; }
+    try { options.onProtocolMessage?.('app-server', Object.freeze({ ...message })); }
+    catch (cause) { fail(new BridgeError(`Protocol observer failed: ${String(cause)}`, { cause })); return; }
     const id = idOf(message);
     if (id !== undefined && typeof message.method !== 'string') {
       const route = pending.get(key(id));
@@ -213,6 +217,8 @@ export async function startBridge(options: BridgeOptions): Promise<Bridge> {
   });
 
   async function requestInternal(method: string, params?: unknown): Promise<unknown> {
+    if (closing) throw new BridgeError('Bridge closed');
+    if (failure) throw failure;
     const id = `m0-app-${++nextId}`;
     return await new Promise((resolve, reject) => {
       pending.set(key(id), { resolve, reject });
@@ -221,6 +227,7 @@ export async function startBridge(options: BridgeOptions): Promise<Bridge> {
     });
   }
   async function request(method: string, params?: unknown): Promise<unknown> {
+    if (closing) throw new BridgeError('Bridge closed');
     if (failure) throw failure;
     if (!upstreamInitialized) throw new BridgeError('App Server is not initialized by the TUI');
     return await requestInternal(method, params);
@@ -257,7 +264,9 @@ export async function startBridge(options: BridgeOptions): Promise<Bridge> {
         }
       };
       current.onMessage = (message) => {
+        if (closing || failure || peer !== current) return;
         try {
+        options.onProtocolMessage?.('tui', Object.freeze({ ...message }));
         const id = idOf(message);
         if (peerState === 'disconnected') {
           if (message.method === 'initialize' && id !== undefined) {
@@ -348,10 +357,11 @@ export async function startBridge(options: BridgeOptions): Promise<Bridge> {
     return {
       url: `ws://127.0.0.1:${address.port}/`, token, child, request,
       close: async () => {
+        if (closing) return;
         closing = true;
         peer?.close();
         rejectPending(new BridgeError('Bridge closed'));
-        await new Promise<void>((resolve) => server.close(() => resolve()));
+        if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()));
         if (child.exitCode === null) child.kill();
       },
     };

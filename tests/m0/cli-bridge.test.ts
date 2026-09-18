@@ -280,3 +280,52 @@ test('approval waits for the TUI decision and unknown notifications cross both d
     assert.deepEqual(await ws.next(), { method: 'test/unknownReceived', params: { marker: 'tui-to-server' } });
   } finally { ws?.close(); await bridge.close(); }
 });
+
+test('four independent connections isolate IDs and reject stopped or crashed generations', async () => {
+  const bridges = await Promise.all(Array.from({ length: 4 }, () =>
+    startBridge({ cli: fakeCli, cwd: process.cwd(), spawnServer: spawnFake })));
+  const sockets: TestWs[] = [];
+  let replacement: Awaited<ReturnType<typeof startBridge>> | undefined;
+  let replacementSocket: TestWs | undefined;
+  try {
+    for (let i = 0; i < 4; i++) {
+      const ws = await TestWs.connect(bridges[i]!.url, bridges[i]!.token);
+      sockets.push(ws);
+      ws.send({ id: 1, method: 'initialize', params: { clientInfo: { name: `pane-${i}`, version: '0.154.0' } } });
+      assert.equal((await ws.next()).id, 1);
+      await finishInit(ws);
+    }
+    const requests = bridges.map((bridge, i) => bridge.request('test/echo', { marker: `app-${i}` }));
+    sockets.forEach((ws, i) => ws.send({ id: 7, method: 'test/echo', params: { marker: `tui-${i}` } }));
+    const appResults = await Promise.all(requests) as { params: { marker: string } }[];
+    const tuiResults = await Promise.all(sockets.map((ws) => ws.next()));
+    for (let i = 0; i < 4; i++) {
+      assert.equal(appResults[i]!.params.marker, `app-${i}`);
+      assert.equal((tuiResults[i]!.result as { params: { marker: string } }).params.marker, `tui-${i}`);
+      assert.equal(tuiResults[i]!.id, 7);
+      assert.notEqual(bridges[i]!.token, bridges[(i + 1) % 4]!.token);
+    }
+    const stopped = bridges[2]!;
+    sockets[2]!.close();
+    await stopped.close();
+    await assert.rejects(stopped.request('test/echo'), /Bridge closed/);
+    replacement = await startBridge({ cli: fakeCli, cwd: process.cwd(), spawnServer: spawnFake });
+    assert.notEqual(replacement.token, stopped.token);
+    await assert.rejects(TestWs.connect(replacement.url, stopped.token));
+    replacementSocket = await TestWs.connect(replacement.url, replacement.token);
+    replacementSocket.send({ id: 1, method: 'initialize' });
+    assert.equal((await replacementSocket.next()).id, 1);
+    await finishInit(replacementSocket);
+    assert.equal((await replacement.request('test/echo', { marker: 'replacement' }) as { params: { marker: string } }).params.marker, 'replacement');
+    const crashed = bridges[3]!;
+    crashed.child.kill();
+    await new Promise<void>((resolve) => crashed.child.once('exit', () => resolve()));
+    await assert.rejects(crashed.request('test/echo'), /App Server exited/);
+    await assert.rejects(TestWs.connect(crashed.url, crashed.token));
+    assert.equal((await bridges[0]!.request('test/echo', { marker: 'survivor' }) as { params: { marker: string } }).params.marker, 'survivor');
+  } finally {
+    replacementSocket?.close();
+    sockets.forEach((ws) => ws.close());
+    await Promise.allSettled([...bridges, ...(replacement ? [replacement] : [])].map((bridge) => bridge.close()));
+  }
+});
