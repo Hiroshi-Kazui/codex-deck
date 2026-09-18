@@ -1,0 +1,63 @@
+{
+  "capturedAt": "2026-09-18T06:12:48.780Z",
+  "root": "C:/develop/cockpit",
+  "note": "Selected source/config only. No credentials or user data. Working-tree content hashes, not a claimed Git commit.",
+  "entries": [
+    {
+      "path": "CLAUDE.md",
+      "sha256": "b90c8e00b72c305aaf96f9ec2fd4993b68f9f0ce9ea551bfb9ff31a49712b463"
+    },
+    {
+      "path": "README.md",
+      "sha256": "fb0515bb5cc768654edbd51c29d795f000935b6c9269698c7c4c66d8097c95d0"
+    },
+    {
+      "path": "package.json",
+      "sha256": "9650ce5d5196122443dd4259209bf1950ff48f00f5d000c02f7d7c2e3328fd84"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "07822e47f8b251740665a5b057ea08a545ee1d57d798cd1263e787f0a8349c2e"
+    },
+    {
+      "path": "docs/claude-multi-window-spec.md",
+      "sha256": "aceccfbb2488c841c7f0f7cb3a1169d6d2cf9bd5a91590a9500a1a2b113bfdc0"
+    },
+    {
+      "path": "docs/harness/README.md",
+      "sha256": "69fdac1d5fe990005d595f599009bf5cc17c2ceb07fc27ef45fb4a2a085d01b0"
+    },
+    {
+      "path": "docs/harness/review-rubric.md",
+      "sha256": "afe29cbf6c216fc4e9d944ce48bd52583b89d308eee7fb0009b62355df3ff3d7"
+    },
+    {
+      "path": ".claude/commands/cockpit-build.md",
+      "sha256": "13994f92fecc887d8d05a9b390b8db7c2f315c257d4c7fbd8add317b55fc90dd"
+    },
+    {
+      "path": "src/main/pty/ptyManager.ts",
+      "sha256": "3f6b0e6632240d509e10e3049c9da64791afa82283e1a673c1be0c9972956468"
+    },
+    {
+      "path": "src/shared/ipc.ts",
+      "sha256": "884d8d6b5b52e46df95e4620b8fb90fe93eed4c271ab64ab45c22c0efcba817d"
+    },
+    {
+      "path": "src/main/archive/archiver.ts",
+      "sha256": "7781299824bf45230f6a612a8efbe265ef7928e2ce29cb734890d38f37ddd528"
+    },
+    {
+      "path": "src/main/evaluation/evaluationRunner.ts",
+      "sha256": "22d70f92f0bc9f09d929ebe8e1d5a8550aa9c12978ad43c6bc72e987326b7f98"
+    },
+    {
+      "path": "electron.vite.config.ts",
+      "sha256": "11d0b80448680913ddbf9cb17c68c13b2b5ebe716123fd54c4d7e85d46f66b56"
+    },
+    {
+      "path": "playwright.config.ts",
+      "sha256": "84af654385573f8332c72911eb058a27b3d3d265d86b9d3bc85ca92ae81cf952"
+    }
+  ]
+}

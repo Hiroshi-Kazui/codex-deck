@@ -1,0 +1,851 @@
+[
+  {
+    "id": "M0-01",
+    "milestone": "M0",
+    "title": "CLI の解決とプロトコル初期化",
+    "dependsOn": [],
+    "critical": true,
+    "scope": [
+      "CLI resolver",
+      "stdio/WebSocket bridge prototype"
+    ],
+    "reads": [
+      "docs/spec/product.md",
+      "docs/spec/reference-manifest.json",
+      "docs/adr/0001-harness.md",
+      "milestones/README.md"
+    ],
+    "criteria": [
+      {
+        "id": "M0-01.CLI",
+        "text": "Codex 0.154.0 の同一実体を TUI と App Server に使い、日本語・空白パス、起動失敗を処理する。"
+      },
+      {
+        "id": "M0-01.INIT",
+        "text": "127.0.0.1 動的ポート、接続トークン、initialize/initialized と要求 ID の衝突防止を検証する。"
+      }
+    ],
+    "checks": [
+      {
+        "name": "受け入れ検証",
+        "command": [
+          "npm",
+          "run",
+          "verify:m0-01"
+        ],
+        "criteria": [
+          "M0-01.CLI",
+          "M0-01.INIT"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "M0-02",
+    "milestone": "M0",
+    "title": "承認・会話ライフサイクル",
+    "dependsOn": [
+      "M0-01"
+    ],
+    "critical": true,
+    "scope": [
+      "protocol forwarding",
+      "thread identity"
+    ],
+    "reads": [
+      "docs/spec/product.md",
+      "docs/spec/reference-manifest.json",
+      "docs/adr/0001-harness.md",
+      "milestones/README.md"
+    ],
+    "criteria": [
+      {
+        "id": "M0-02.APPROVAL",
+        "text": "サーバー発の承認要求を TUI へ往復させ、代理承認せず未知メッセージも中継する。"
+      },
+      {
+        "id": "M0-02.THREAD",
+        "text": "新規・正確な ID での再開・fork・モデル変更・compact の thread/session/run 対応を検証する。"
+      }
+    ],
+    "checks": [
+      {
+        "name": "受け入れ検証",
+        "command": [
+          "npm",
+          "run",
+          "verify:m0-02"
+        ],
+        "criteria": [
+          "M0-02.APPROVAL",
+          "M0-02.THREAD"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "M0-03",
+    "milestone": "M0",
+    "title": "接続方式の実機ゲート",
+    "dependsOn": [
+      "M0-02"
+    ],
+    "critical": true,
+    "scope": [
+      "live integration",
+      "process generations"
+    ],
+    "reads": [
+      "docs/spec/product.md",
+      "docs/spec/reference-manifest.json",
+      "docs/adr/0001-harness.md",
+      "milestones/README.md"
+    ],
+    "criteria": [
+      {
+        "id": "M0-03.LIVE",
+        "text": "実 Codex TUI/App Server で対話と承認往復、新規・再開・fork・モデル変更・compact を確認し、実行日時・CLI版・結果を .harness/evidence に保存する。模擬結果だけでは合格不可。"
+      },
+      {
+        "id": "M0-03.FOUR",
+        "text": "4接続の混線防止、停止・再起動・異常終了・遅延イベント拒否を検証する。"
+      }
+    ],
+    "checks": [
+      {
+        "name": "受け入れ検証",
+        "command": [
+          "npm",
+          "run",
+          "verify:m0-03"
+        ],
+        "criteria": [
+          "M0-03.LIVE",
+          "M0-03.FOUR"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "M1-01",
+    "milestone": "M1",
+    "title": "Electron アプリ基盤",
+    "dependsOn": [
+      "M0-03"
+    ],
+    "critical": false,
+    "scope": [
+      "Electron",
+      "dependencies",
+      "typed IPC"
+    ],
+    "reads": [
+      "docs/spec/product.md",
+      "docs/spec/reference-manifest.json",
+      "docs/adr/0001-harness.md",
+      "milestones/README.md"
+    ],
+    "criteria": [
+      {
+        "id": "M1-01.BUILD",
+        "text": "cockpit の許可対象ファイルのみ移植し、Electron ABI に対応した node-pty/better-sqlite3 でビルド・起動する。"
+      },
+      {
+        "id": "M1-01.ISOLATE",
+        "text": "main/preload/renderer/shared を分離し、contextIsolation と最小 IPC を維持、保存先を codex-deck に分離する。"
+      }
+    ],
+    "checks": [
+      {
+        "name": "受け入れ検証",
+        "command": [
+          "npm",
+          "run",
+          "verify:m1-01"
+        ],
+        "criteria": [
+          "M1-01.BUILD",
+          "M1-01.ISOLATE"
+        ]
+      },
+      {
+        "name": "型検査",
+        "command": [
+          "npm",
+          "run",
+          "typecheck"
+        ],
+        "criteria": []
+      },
+      {
+        "name": "Lint",
+        "command": [
+          "npm",
+          "run",
+          "lint"
+        ],
+        "criteria": []
+      },
+      {
+        "name": "回帰テスト",
+        "command": [
+          "npm",
+          "run",
+          "test"
+        ],
+        "criteria": []
+      },
+      {
+        "name": "ビルド",
+        "command": [
+          "npm",
+          "run",
+          "build"
+        ],
+        "criteria": []
+      },
+      {
+        "name": "E2E",
+        "command": [
+          "npm",
+          "run",
+          "test:e2e"
+        ],
+        "criteria": []
+      }
+    ]
+  },
+  {
+    "id": "M2-01",
+    "milestone": "M2",
+    "title": "4ペイン・端末・日本語入力",
+    "dependsOn": [
+      "M1-01"
+    ],
+    "critical": false,
+    "scope": [
+      "renderer panes",
+      "PTY lifecycle",
+      "dictation input"
+    ],
+    "reads": [
+      "docs/spec/product.md",
+      "docs/spec/reference-manifest.json",
+      "docs/adr/0001-harness.md",
+      "milestones/README.md"
+    ],
+    "criteria": [
+      {
+        "id": "M2-01.PANES",
+        "text": "1/2/4ペイン、分割比率の保存、PTY リサイズと世代管理を検証する。"
+      },
+      {
+        "id": "M2-01.IME",
+        "text": "Enter送信、Shift+Enter改行、Ctrl+Enter挿入のみ、Escapeフォーカス、日本語IME確定時の誤送信防止を実機で確認する。"
+      }
+    ],
+    "checks": [
+      {
+        "name": "受け入れ検証",
+        "command": [
+          "npm",
+          "run",
+          "verify:m2-01"
+        ],
+        "criteria": [
+          "M2-01.PANES",
+          "M2-01.IME"
+        ]
+      },
+      {
+        "name": "型検査",
+        "command": [
+          "npm",
+          "run",
+          "typecheck"
+        ],
+        "criteria": []
+      },
+      {
+        "name": "Lint",
+        "command": [
+          "npm",
+          "run",
+          "lint"
+        ],
+        "criteria": []
+      }
+    ]
+  },
+  {
+    "id": "M2-02",
+    "milestone": "M2",
+    "title": "目的と再開",
+    "dependsOn": [
+      "M2-01"
+    ],
+    "critical": false,
+    "scope": [
+      "purpose lifecycle",
+      "resume UI"
+    ],
+    "reads": [
+      "docs/spec/product.md",
+      "docs/spec/reference-manifest.json",
+      "docs/adr/0001-harness.md",
+      "milestones/README.md"
+    ],
+    "criteria": [
+      {
+        "id": "M2-02.PURPOSE",
+        "text": "目的の明示開始・初回入力補完・停止と完了の分離・ペイン間の対応を実装する。"
+      },
+      {
+        "id": "M2-02.RESUME",
+        "text": "アプリ再起動で配置・cwd・未完了目的を復元し、自動実行せず正確なthread IDで手動再開できる。"
+      }
+    ],
+    "checks": [
+      {
+        "name": "受け入れ検証",
+        "command": [
+          "npm",
+          "run",
+          "verify:m2-02"
+        ],
+        "criteria": [
+          "M2-02.PURPOSE",
+          "M2-02.RESUME"
+        ]
+      },
+      {
+        "name": "型検査",
+        "command": [
+          "npm",
+          "run",
+          "typecheck"
+        ],
+        "criteria": []
+      },
+      {
+        "name": "Lint",
+        "command": [
+          "npm",
+          "run",
+          "lint"
+        ],
+        "criteria": []
+      }
+    ]
+  },
+  {
+    "id": "M3-01",
+    "milestone": "M3",
+    "title": "正規化アーカイブ",
+    "dependsOn": [
+      "M2-02"
+    ],
+    "critical": true,
+    "scope": [
+      "normalized JSONL",
+      "event adapter"
+    ],
+    "reads": [
+      "docs/spec/product.md",
+      "docs/spec/reference-manifest.json",
+      "docs/adr/0001-harness.md",
+      "milestones/README.md"
+    ],
+    "criteria": [
+      {
+        "id": "M3-01.FORMAT",
+        "text": "schemaVersion/eventId/sequence/time/thread/turn/item/run/kind/payload を持つ追記形式と読取版判定を実装する。認証情報とツール出力本文を保存しない。"
+      },
+      {
+        "id": "M3-01.DEDUPE",
+        "text": "公開された会話・reasoning・ツール実行・承認・境界を記録し、差分と完了の二重表示を防ぐ。中断は未完了として残す。"
+      }
+    ],
+    "checks": [
+      {
+        "name": "受け入れ検証",
+        "command": [
+          "npm",
+          "run",
+          "verify:m3-01"
+        ],
+        "criteria": [
+          "M3-01.FORMAT",
+          "M3-01.DEDUPE"
+        ]
+      },
+      {
+        "name": "型検査",
+        "command": [
+          "npm",
+          "run",
+          "typecheck"
+        ],
+        "criteria": []
+      },
+      {
+        "name": "Lint",
+        "command": [
+          "npm",
+          "run",
+          "lint"
+        ],
+        "criteria": []
+      }
+    ]
+  },
+  {
+    "id": "M3-02",
+    "milestone": "M3",
+    "title": "永続化・復旧・検索",
+    "dependsOn": [
+      "M3-01"
+    ],
+    "critical": true,
+    "scope": [
+      "SQLite",
+      "history reconciliation",
+      "search UI"
+    ],
+    "reads": [
+      "docs/spec/product.md",
+      "docs/spec/reference-manifest.json",
+      "docs/adr/0001-harness.md",
+      "milestones/README.md"
+    ],
+    "criteria": [
+      {
+        "id": "M3-02.RECOVERY",
+        "text": "thread主キー、turnと目的の関連、ページング履歴補完、保存位置・索引分離、異常終了復旧を検証する。"
+      },
+      {
+        "id": "M3-02.SEARCH",
+        "text": "目的・タイトル・本文の閲覧専用検索と不完全記録表示を実装し、外部履歴を新目的の評価対象へ混入させない。"
+      }
+    ],
+    "checks": [
+      {
+        "name": "受け入れ検証",
+        "command": [
+          "npm",
+          "run",
+          "verify:m3-02"
+        ],
+        "criteria": [
+          "M3-02.RECOVERY",
+          "M3-02.SEARCH"
+        ]
+      },
+      {
+        "name": "型検査",
+        "command": [
+          "npm",
+          "run",
+          "typecheck"
+        ],
+        "criteria": []
+      },
+      {
+        "name": "Lint",
+        "command": [
+          "npm",
+          "run",
+          "lint"
+        ],
+        "criteria": []
+      },
+      {
+        "name": "回帰テスト",
+        "command": [
+          "npm",
+          "run",
+          "test"
+        ],
+        "criteria": []
+      },
+      {
+        "name": "ビルド",
+        "command": [
+          "npm",
+          "run",
+          "build"
+        ],
+        "criteria": []
+      },
+      {
+        "name": "E2E",
+        "command": [
+          "npm",
+          "run",
+          "test:e2e"
+        ],
+        "criteria": []
+      }
+    ]
+  },
+  {
+    "id": "M4-01",
+    "milestone": "M4",
+    "title": "使用量とミラー",
+    "dependsOn": [
+      "M3-02"
+    ],
+    "critical": false,
+    "scope": [
+      "usage adapter",
+      "mirror checkpoints"
+    ],
+    "reads": [
+      "docs/spec/product.md",
+      "docs/spec/reference-manifest.json",
+      "docs/adr/0001-harness.md",
+      "milestones/README.md"
+    ],
+    "criteria": [
+      {
+        "id": "M4-01.USAGE",
+        "text": "公式token usage/rate limitsを用い、累積・直近・cache・reasoningの二重加算を防止。未取得・古い値、動的時間枠を明示する。"
+      },
+      {
+        "id": "M4-01.MIRROR",
+        "text": "保存先ごとの転送進捗、オフライン復旧、明示バックフィルを実装。DB・内部チェックポイント・認証情報は転送しない。"
+      }
+    ],
+    "checks": [
+      {
+        "name": "受け入れ検証",
+        "command": [
+          "npm",
+          "run",
+          "verify:m4-01"
+        ],
+        "criteria": [
+          "M4-01.USAGE",
+          "M4-01.MIRROR"
+        ]
+      },
+      {
+        "name": "型検査",
+        "command": [
+          "npm",
+          "run",
+          "typecheck"
+        ],
+        "criteria": []
+      },
+      {
+        "name": "Lint",
+        "command": [
+          "npm",
+          "run",
+          "lint"
+        ],
+        "criteria": []
+      }
+    ]
+  },
+  {
+    "id": "M4-02",
+    "milestone": "M4",
+    "title": "Git 開始準備",
+    "dependsOn": [
+      "M4-01"
+    ],
+    "critical": true,
+    "scope": [
+      "Git preparation"
+    ],
+    "reads": [
+      "docs/spec/product.md",
+      "docs/spec/reference-manifest.json",
+      "docs/adr/0001-harness.md",
+      "milestones/README.md"
+    ],
+    "criteria": [
+      {
+        "id": "M4-02.GIT",
+        "text": "新規開始だけdefault branchとff-only pullを実行。dirty/untracked/別ペイン使用中はスキップする。"
+      },
+      {
+        "id": "M4-02.FAILURE",
+        "text": "Git不在・非repo・remote/upstream不在・失敗時も起動可能。5/20/30秒のタイムアウト、自動stash/reset/clean/commit/push無しを検証する。"
+      }
+    ],
+    "checks": [
+      {
+        "name": "受け入れ検証",
+        "command": [
+          "npm",
+          "run",
+          "verify:m4-02"
+        ],
+        "criteria": [
+          "M4-02.GIT",
+          "M4-02.FAILURE"
+        ]
+      },
+      {
+        "name": "型検査",
+        "command": [
+          "npm",
+          "run",
+          "typecheck"
+        ],
+        "criteria": []
+      },
+      {
+        "name": "Lint",
+        "command": [
+          "npm",
+          "run",
+          "lint"
+        ],
+        "criteria": []
+      }
+    ]
+  },
+  {
+    "id": "M5-01",
+    "milestone": "M5",
+    "title": "タイトル生成と評価",
+    "dependsOn": [
+      "M4-02"
+    ],
+    "critical": false,
+    "scope": [
+      "auxiliary Codex",
+      "evaluation queue"
+    ],
+    "reads": [
+      "docs/spec/product.md",
+      "docs/spec/reference-manifest.json",
+      "docs/adr/0001-harness.md",
+      "milestones/README.md"
+    ],
+    "criteria": [
+      {
+        "id": "M5-01.EVALUATE",
+        "text": "目的に属するturnだけを抽出し、空入力はモデルを呼ばない。既定モデル継承と設定変更、ephemeral構造化出力、タイムアウト・失敗を記録する。"
+      },
+      {
+        "id": "M5-01.SCORES",
+        "text": "円滑さ・ストレス・意思疎通コスト0〜100、要約、ユーザー/環境改善案を保存。タイトル失敗は目的先頭へフォールバックする。"
+      }
+    ],
+    "checks": [
+      {
+        "name": "受け入れ検証",
+        "command": [
+          "npm",
+          "run",
+          "verify:m5-01"
+        ],
+        "criteria": [
+          "M5-01.EVALUATE",
+          "M5-01.SCORES"
+        ]
+      },
+      {
+        "name": "型検査",
+        "command": [
+          "npm",
+          "run",
+          "typecheck"
+        ],
+        "criteria": []
+      },
+      {
+        "name": "Lint",
+        "command": [
+          "npm",
+          "run",
+          "lint"
+        ],
+        "criteria": []
+      }
+    ]
+  },
+  {
+    "id": "M5-02",
+    "milestone": "M5",
+    "title": "再評価・集計・出力",
+    "dependsOn": [
+      "M5-01"
+    ],
+    "critical": false,
+    "scope": [
+      "evaluation history",
+      "charts",
+      "reports"
+    ],
+    "reads": [
+      "docs/spec/product.md",
+      "docs/spec/reference-manifest.json",
+      "docs/adr/0001-harness.md",
+      "milestones/README.md"
+    ],
+    "criteria": [
+      {
+        "id": "M5-02.HISTORY",
+        "text": "異議申し立て・再評価は追記し、旧評価を保持。各目的の最新成功評価でISO週/月/全期間を集計する。"
+      },
+      {
+        "id": "M5-02.REPORT",
+        "text": "レーダー表示と元数値、主観的評価の表示、MD/JSON出力を実装し、出力失敗でも評価を失わない。"
+      }
+    ],
+    "checks": [
+      {
+        "name": "受け入れ検証",
+        "command": [
+          "npm",
+          "run",
+          "verify:m5-02"
+        ],
+        "criteria": [
+          "M5-02.HISTORY",
+          "M5-02.REPORT"
+        ]
+      },
+      {
+        "name": "型検査",
+        "command": [
+          "npm",
+          "run",
+          "typecheck"
+        ],
+        "criteria": []
+      },
+      {
+        "name": "Lint",
+        "command": [
+          "npm",
+          "run",
+          "lint"
+        ],
+        "criteria": []
+      },
+      {
+        "name": "回帰テスト",
+        "command": [
+          "npm",
+          "run",
+          "test"
+        ],
+        "criteria": []
+      },
+      {
+        "name": "ビルド",
+        "command": [
+          "npm",
+          "run",
+          "build"
+        ],
+        "criteria": []
+      },
+      {
+        "name": "E2E",
+        "command": [
+          "npm",
+          "run",
+          "test:e2e"
+        ],
+        "criteria": []
+      }
+    ]
+  },
+  {
+    "id": "M6-01",
+    "milestone": "M6",
+    "title": "総合回帰とローカル配布",
+    "dependsOn": [
+      "M5-02"
+    ],
+    "critical": true,
+    "scope": [
+      "diagnostics",
+      "launcher",
+      "regression"
+    ],
+    "reads": [
+      "docs/spec/product.md",
+      "docs/spec/reference-manifest.json",
+      "docs/adr/0001-harness.md",
+      "milestones/README.md"
+    ],
+    "criteria": [
+      {
+        "id": "M6-01.PARITY",
+        "text": "全要件のトレースとtypecheck/lint/unit/E2E/buildを完了し、未検証を成功扱いしない。"
+      },
+      {
+        "id": "M6-01.WINDOWS",
+        "text": "実WindowsのConPTY・日本語IME・実認証・4ペイン・異常終了復旧を確認し、非表示起動スクリプトと操作説明を提供する。インストーラ/自動更新/公開は対象外。"
+      }
+    ],
+    "checks": [
+      {
+        "name": "受け入れ検証",
+        "command": [
+          "npm",
+          "run",
+          "verify:m6-01"
+        ],
+        "criteria": [
+          "M6-01.PARITY",
+          "M6-01.WINDOWS"
+        ]
+      },
+      {
+        "name": "型検査",
+        "command": [
+          "npm",
+          "run",
+          "typecheck"
+        ],
+        "criteria": []
+      },
+      {
+        "name": "Lint",
+        "command": [
+          "npm",
+          "run",
+          "lint"
+        ],
+        "criteria": []
+      },
+      {
+        "name": "回帰テスト",
+        "command": [
+          "npm",
+          "run",
+          "test"
+        ],
+        "criteria": []
+      },
+      {
+        "name": "ビルド",
+        "command": [
+          "npm",
+          "run",
+          "build"
+        ],
+        "criteria": []
+      },
+      {
+        "name": "E2E",
+        "command": [
+          "npm",
+          "run",
+          "test:e2e"
+        ],
+        "criteria": []
+      }
+    ]
+  }
+]

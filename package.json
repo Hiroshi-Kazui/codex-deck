@@ -1,0 +1,13 @@
+{
+  "name": "codex-deck",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "verify:m0-01": "node --experimental-strip-types --test tests/m0/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}

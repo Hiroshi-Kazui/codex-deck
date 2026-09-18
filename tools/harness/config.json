@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "referenceRoot": "C:/develop/cockpit",
+  "models": { "implement": "gpt-5.6-sol", "review": "gpt-5.6-sol", "critical": "gpt-6-astra", "diagnose": "gpt-6-astra" },
+  "limits": { "agentMs": 1800000, "checkMs": 600000, "runMs": 7200000, "fixes": 3, "transientRetries": 2 },
+  "codexPath": null
+}
