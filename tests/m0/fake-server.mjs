@@ -16,6 +16,11 @@ for await (const line of createInterface({ input: process.stdin })) {
   } else if (message.method === 'test/serverRequest') {
     process.stdout.write(JSON.stringify({ id: message.id, result: { started: true } }) + '\n');
     process.stdout.write(JSON.stringify({ id: 1, method: 'approval/request', params: { message: 'ok?' } }) + '\n');
+} else if (message.method === 'test/emitUnknown') {
+    process.stdout.write(JSON.stringify({ id: message.id, result: {} }) + '\n');
+    process.stdout.write(JSON.stringify({ method: 'future/serverNotice', params: { marker: 'server-to-tui' } }) + '\n');
+  } else if (message.method === 'future/clientNotice') {
+    process.stdout.write(JSON.stringify({ method: 'test/unknownReceived', params: message.params }) + '\n');
   } else if (message.method === 'test/lastAnswer') {
     process.stdout.write(JSON.stringify({ id: message.id, result: lastServerAnswer }) + '\n');
   } else if (message.id === 1 && (message.result || message.error)) {

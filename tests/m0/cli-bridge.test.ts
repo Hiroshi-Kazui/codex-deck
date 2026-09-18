@@ -260,3 +260,23 @@ test('missing App Server executable reports spawn failure', async () => {
     cwd: process.cwd(),
   }), /App Server launch failed/);
 });
+
+test('approval waits for the TUI decision and unknown notifications cross both directions', async () => {
+  const bridge = await startBridge({ cli: fakeCli, cwd: process.cwd(), spawnServer: spawnFake });
+  let ws: TestWs | undefined;
+  try {
+    ws = await TestWs.connect(bridge.url, bridge.token);
+    ws.send({ id: 1, method: 'initialize' }); await ws.next(); await finishInit(ws);
+    await bridge.request('test/serverRequest');
+    const approval = await ws.next();
+    assert.equal(approval.method, 'approval/request');
+    assert.deepEqual(await bridge.request('test/lastAnswer'), undefined);
+    ws.send({ id: approval.id, result: { decision: 'decline' } });
+    assert.deepEqual(await ws.next(), { method: 'test/serverAnswer', params: { decision: 'decline' } });
+    assert.deepEqual(await bridge.request('test/lastAnswer'), { decision: 'decline' });
+    await bridge.request('test/emitUnknown');
+    assert.deepEqual(await ws.next(), { method: 'future/serverNotice', params: { marker: 'server-to-tui' } });
+    ws.send({ method: 'future/clientNotice', params: { marker: 'tui-to-server' } });
+    assert.deepEqual(await ws.next(), { method: 'test/unknownReceived', params: { marker: 'tui-to-server' } });
+  } finally { ws?.close(); await bridge.close(); }
+});
