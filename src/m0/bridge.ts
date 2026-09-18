@@ -209,7 +209,10 @@ export async function startBridge(options: BridgeOptions): Promise<Bridge> {
       peer.send({ ...message, id: forwarded });
       return;
     }
-    if (peerState === 'ready') peer?.send(message);
+    if (peerState === 'ready') {
+      try { options.onProtocolMessage?.('tui-write', Object.freeze({ ...message })); peer?.send(message); }
+      catch (cause) { fail(new BridgeError(`TUI notification forwarding failed: ${String(cause)}`, { cause })); }
+    }
   });
   stderr.on('data', (chunk: Buffer) => { stderrTail = (stderrTail + chunk.toString('utf8')).slice(-2048); });
   stdin.on('error', (cause) => fail(new BridgeError(`App Server stdin error: ${cause.message}`, { cause })));

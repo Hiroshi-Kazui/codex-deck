@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
 import { writeFile, mkdtemp, rm } from 'node:fs/promises';
 import net, { type Socket } from 'node:net';
 import os from 'node:os';
@@ -16,6 +18,40 @@ const fakeCli: Cli = { executable: process.execPath, version: REQUIRED_CODEX_VER
 
 function spawnFake(env: NodeJS.ProcessEnv = process.env) {
   return spawn(process.execPath, [fakeScript], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, env });
+}
+
+function controlledServer() {
+  const stdin = new PassThrough();
+  const stdout = new PassThrough();
+  const stderr = new PassThrough();
+  const processLike = new EventEmitter() as EventEmitter & {
+    stdin: PassThrough; stdout: PassThrough; stderr: PassThrough; exitCode: number | null; kill: () => boolean;
+  };
+  processLike.stdin = stdin; processLike.stdout = stdout; processLike.stderr = stderr;
+  processLike.exitCode = null;
+  processLike.kill = () => {
+    if (processLike.exitCode !== null) return false;
+    processLike.exitCode = 9;
+    queueMicrotask(() => processLike.emit('exit', 9, null));
+    return true;
+  };
+  const requests: Record<string, unknown>[] = [];
+  let pending = '';
+  stdin.on('data', (chunk: Buffer) => {
+    pending += chunk.toString('utf8');
+    for (let newline = pending.indexOf('\n'); newline >= 0; newline = pending.indexOf('\n')) {
+      const message = JSON.parse(pending.slice(0, newline)) as Record<string, unknown>;
+      pending = pending.slice(newline + 1);
+      requests.push(message);
+      if (message.method === 'initialize') stdout.write(JSON.stringify({ id: message.id, result: { userAgent: 'controlled' } }) + '\n');
+      if (message.method === 'test/echo') stdout.write(JSON.stringify({ id: message.id, result: { idSeen: message.id, params: message.params } }) + '\n');
+    }
+  });
+  queueMicrotask(() => processLike.emit('spawn'));
+  return { child: processLike as unknown as ChildProcess, requests,
+    inject: async (message: Record<string, unknown>) => {
+      await new Promise<void>((resolve) => stdout.write(JSON.stringify(message) + '\n', () => resolve()));
+    } };
 }
 
 class TestWs {
@@ -333,6 +369,82 @@ test('four independent connections isolate IDs and reject stopped or crashed gen
   } finally {
     replacementSocket?.close();
     sockets.forEach((ws) => ws.close());
+    await Promise.allSettled([...bridges, ...(replacement ? [replacement] : [])].map((bridge) => bridge.close()));
+  }
+});
+
+test('late stopped and crashed generation messages cannot reach replacement or survivors', async () => {
+  const servers = Array.from({ length: 4 }, controlledServer);
+  const observed: { source: string; method?: unknown }[][] = Array.from({ length: 4 }, () => []);
+  const bridges = await Promise.all(servers.map((server, i) => startBridge({ cli: fakeCli, cwd: process.cwd(),
+    spawnServer: () => server.child,
+    onProtocolMessage: (source, message) => { observed[i]!.push({ source, method: message.method }); } })));
+  const sockets: TestWs[] = [];
+  let replacement: Awaited<ReturnType<typeof startBridge>> | undefined;
+  let replacementSocket: TestWs | undefined;
+  try {
+    for (let i = 0; i < 4; i++) {
+      const ws = await TestWs.connect(bridges[i]!.url, bridges[i]!.token);
+      sockets.push(ws);
+      ws.send({ id: 1, method: 'initialize' }); assert.equal((await ws.next()).id, 1);
+      await finishInit(ws);
+    }
+    async function createPending(i: number) {
+      sockets[i]!.send({ id: 7, method: 'test/held', params: { generation: i } });
+      let held: Record<string, unknown> | undefined;
+      for (let attempt = 0; attempt < 300; attempt++) {
+        held = servers[i]!.requests.find((message) => message.method === 'test/held' &&
+          (message.params as Record<string, unknown> | undefined)?.generation === i);
+        if (held) break;
+        await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      }
+      assert.ok(held && typeof held.id === 'string', 'pane ' + i + ' held request was not forwarded');
+      await servers[i]!.inject({ id: 0, method: 'approval/request', params: { availableDecisions: ['cancel'], generation: i } });
+      const approval = await sockets[i]!.next();
+      assert.equal(approval.method, 'approval/request');
+      assert.equal(typeof approval.id, 'string');
+      return held.id;
+    }
+    const stoppedHeldId = await createPending(2);
+    await bridges[2]!.close();
+    sockets[2]!.close();
+    await assert.rejects(bridges[2]!.request('test/echo'), /Bridge closed/);
+    const replacementServer = controlledServer();
+    const replacementObserved: { source: string; method?: unknown }[] = [];
+    replacement = await startBridge({ cli: fakeCli, cwd: process.cwd(), spawnServer: () => replacementServer.child,
+      onProtocolMessage: (source, message) => { replacementObserved.push({ source, method: message.method }); } });
+    replacementSocket = await TestWs.connect(replacement.url, replacement.token);
+    replacementSocket.send({ id: 1, method: 'initialize' }); assert.equal((await replacementSocket.next()).id, 1);
+    await finishInit(replacementSocket);
+    const stoppedCount = observed[2]!.length;
+    await servers[2]!.inject({ id: stoppedHeldId, result: { generation: 'stale-stop' } });
+    await servers[2]!.inject({ method: 'future/late', params: { generation: 'stale-stop' } });
+    await servers[2]!.inject({ id: 0, method: 'approval/request', params: { generation: 'stale-stop' } });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(observed[2]!.length, stoppedCount);
+    const crashedHeldId = await createPending(3);
+    const crashExit = new Promise<void>((resolve) => bridges[3]!.child.once('exit', () => resolve()));
+    bridges[3]!.child.kill();
+    await crashExit;
+    await assert.rejects(bridges[3]!.request('test/echo'), /App Server exited/);
+    const crashedCount = observed[3]!.length;
+    await servers[3]!.inject({ id: crashedHeldId, result: { generation: 'stale-crash' } });
+    await servers[3]!.inject({ method: 'future/late', params: { generation: 'stale-crash' } });
+    await servers[3]!.inject({ id: 0, method: 'approval/request', params: { generation: 'stale-crash' } });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(observed[3]!.length, crashedCount);
+    assert.equal(replacementObserved.some((event) => event.method === 'future/late' || event.method === 'approval/request'), false);
+    for (const i of [0, 1]) {
+      const result = await bridges[i]!.request('test/echo', { generation: 'survivor-' + i }) as { params: { generation: string } };
+      assert.equal(result.params.generation, 'survivor-' + i);
+      sockets[i]!.send({ id: 7, method: 'test/echo', params: { generation: 'survivor-' + i } });
+      assert.equal((await sockets[i]!.next()).id, 7);
+    }
+    assert.equal((await replacement.request('test/echo', { generation: 'replacement' }) as { params: { generation: string } }).params.generation, 'replacement');
+    replacementSocket.send({ id: 7, method: 'test/echo', params: { generation: 'replacement' } });
+    assert.equal((await replacementSocket.next()).id, 7);
+  } finally {
+    replacementSocket?.close(); sockets.forEach((ws) => ws.close());
     await Promise.allSettled([...bridges, ...(replacement ? [replacement] : [])].map((bridge) => bridge.close()));
   }
 });
