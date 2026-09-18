@@ -63,11 +63,21 @@ function createWindow(): void {
     }
   });
   window.once('ready-to-show', () => window.show());
-  if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
-    void window.loadURL(process.env.ELECTRON_RENDERER_URL);
-  } else {
-    void window.loadFile(path.join(dirname, '../renderer/index.html'));
-  }
+  const rendererUrl = !app.isPackaged ? process.env.ELECTRON_RENDERER_URL : undefined;
+  const target = rendererUrl || path.join(dirname, '../renderer/index.html');
+  void Promise.resolve().then(() => rendererUrl ? window.loadURL(target) : window.loadFile(target)).catch(async (cause: unknown) => {
+    if (window.isDestroyed()) return;
+    const message = `Could not load application window (${target}): ${errorMessage(cause)}`;
+    const escaped = message.replace(/[&<>"']/g, (character) => `&#${character.charCodeAt(0)};`);
+    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>codex-deck startup error</title></head><body><main><h1>codex-deck startup error</h1><p role="alert">${escaped}</p></main></body></html>`;
+    try {
+      await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+      if (!window.isDestroyed()) window.show();
+    } catch (fallbackCause) {
+      dialog.showErrorBox('codex-deck startup error', `${message}\nError page failed: ${errorMessage(fallbackCause)}`);
+      if (!window.isDestroyed()) window.show();
+    }
+  });
 }
 
 function applyTestAppDataOverride(): void {

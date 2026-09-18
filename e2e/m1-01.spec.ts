@@ -80,3 +80,34 @@ test('M1-01: missing preload shows a visible startup failure', async () => {
     await removeIsolatedRoot(isolatedRoot);
   }
 });
+
+
+test('M1-01: renderer load failure is visible with its cause', async () => {
+  const isolatedRoot = await mkdtemp(path.join(os.tmpdir(), 'codex-deck-m1-'));
+  let electron: Awaited<ReturnType<typeof _electron.launch>> | undefined;
+  try {
+    electron = await _electron.launch({
+      args: ['.'], executablePath: require('electron') as string,
+      env: {
+        ...process.env, CODEX_DECK_TEST_APPDATA: isolatedRoot,
+        CODEX_DECK_TEST_MISSING_PRELOAD: '0',
+        ELECTRON_RENDERER_URL: 'http://127.0.0.1:1/deck-m1-missing'
+      }
+    });
+    const page = await electron.firstWindow();
+    const alert = page.getByRole('alert');
+    await expect(alert).toBeVisible();
+    await expect(alert).toContainText('Could not load application window');
+    await expect(alert).toContainText('http://127.0.0.1:1/deck-m1-missing');
+    await expect(alert).toContainText(/ERR_[A-Z_]+/);
+    const state = await electron.evaluate(({ app, BrowserWindow }) => ({
+      appData: app.getPath('appData'),
+      userData: app.getPath('userData'),
+      visible: BrowserWindow.getAllWindows()[0]?.isVisible() ?? false
+    }));
+    expect(state).toEqual({ appData: isolatedRoot, userData: path.join(isolatedRoot, 'codex-deck'), visible: true });
+  } finally {
+    if (electron) await electron.close();
+    await removeIsolatedRoot(isolatedRoot);
+  }
+});
