@@ -36,7 +36,8 @@ async function probeNative(storagePath: string): Promise<BootstrapStatus> {
         return;
       }
       const timer = setTimeout(() => {
-        child.kill();
+        try { child.kill(); }
+        catch (cause) { reject(new Error('ConPTY probe timed out; stopping child failed: ' + errorMessage(cause))); return; }
         reject(new Error('ConPTY probe timed out'));
       }, 10_000);
       child.onExit(({ exitCode }) => {
@@ -51,10 +52,13 @@ async function probeNative(storagePath: string): Promise<BootstrapStatus> {
 }
 
 function createWindow(): void {
+  const preloadPath = process.env.CODEX_DECK_TEST_MISSING_PRELOAD === '1'
+    ? path.join(storagePath, 'intentionally-missing-preload.cjs')
+    : path.join(dirname, '../preload/index.cjs');
   const window = new BrowserWindow({
     width: 1200, height: 800, show: false,
     webPreferences: {
-      preload: path.join(dirname, '../preload/index.cjs'),
+      preload: preloadPath,
       contextIsolation: true, nodeIntegration: false, sandbox: true
     }
   });
@@ -68,7 +72,10 @@ function createWindow(): void {
 
 function applyTestAppDataOverride(): void {
   const raw = process.env.CODEX_DECK_TEST_APPDATA;
-  if (raw === undefined) return;
+  if (raw === undefined) {
+    if (process.env.CODEX_DECK_TEST_MISSING_PRELOAD === '1') throw new Error('Missing-preload test requires isolated AppData');
+    return;
+  }
   if (app.isPackaged || !path.isAbsolute(raw)) throw new Error('Invalid test AppData override');
   const candidate = path.resolve(raw);
   const relative = path.relative(path.resolve(os.tmpdir()), candidate);

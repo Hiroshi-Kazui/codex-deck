@@ -7,13 +7,24 @@ import path from 'node:path';
 
 const require = createRequire(import.meta.url);
 
+async function removeIsolatedRoot(isolatedRoot: string): Promise<void> {
+  const tempRoot = path.resolve(os.tmpdir());
+  if (!path.resolve(isolatedRoot).startsWith(tempRoot + path.sep) ||
+      !path.basename(isolatedRoot).startsWith('codex-deck-m1-')) {
+    throw new Error('Refusing to remove test data outside temp');
+  }
+  await rm(isolatedRoot, { recursive: true, force: true });
+}
+
+
 test('M1-01: Electron native ABI, isolated storage, and typed preload IPC work', async () => {
   const isolatedRoot = await mkdtemp(path.join(os.tmpdir(), 'codex-deck-m1-'));
-  const electron = await _electron.launch({
-    args: ['.'], executablePath: require('electron') as string,
-    env: { ...process.env, CODEX_DECK_TEST_APPDATA: isolatedRoot }
-  });
+  let electron: Awaited<ReturnType<typeof _electron.launch>> | undefined;
   try {
+    electron = await _electron.launch({
+      args: ['.'], executablePath: require('electron') as string,
+      env: { ...process.env, CODEX_DECK_TEST_APPDATA: isolatedRoot }
+    });
     const page = await electron.firstWindow();
     const preferences = await electron.evaluate(({ BrowserWindow }) => {
       const contents = BrowserWindow.getAllWindows()[0]?.webContents;
@@ -44,9 +55,28 @@ test('M1-01: Electron native ABI, isolated storage, and typed preload IPC work',
     expect(api.nodeRequire).toBe('undefined');
     expect(api.status).toEqual({ ok: true, name: 'codex-deck', storagePath: paths.userData, native: { pty: true, sqlite: true } });
   } finally {
-    await electron.close();
-    const tempRoot = path.resolve(os.tmpdir());
-    if (!path.resolve(isolatedRoot).startsWith(tempRoot + path.sep) || !path.basename(isolatedRoot).startsWith('codex-deck-m1-')) throw new Error('Refusing to remove test data outside temp');
-    await rm(isolatedRoot, { recursive: true, force: true });
+    if (electron) await electron.close();
+    await removeIsolatedRoot(isolatedRoot);
+  }
+});
+
+
+test('M1-01: missing preload shows a visible startup failure', async () => {
+  const isolatedRoot = await mkdtemp(path.join(os.tmpdir(), 'codex-deck-m1-'));
+  let electron: Awaited<ReturnType<typeof _electron.launch>> | undefined;
+  try {
+    electron = await _electron.launch({
+      args: ['.'], executablePath: require('electron') as string,
+      env: { ...process.env, CODEX_DECK_TEST_APPDATA: isolatedRoot, CODEX_DECK_TEST_MISSING_PRELOAD: '1' }
+    });
+    const page = await electron.firstWindow();
+    await expect(page.getByRole('alert')).toContainText('App bridge is unavailable');
+    await expect(page.getByRole('status')).toHaveCount(0);
+    const paths = await electron.evaluate(({ app }) => ({ appData: app.getPath('appData'), userData: app.getPath('userData') }));
+    expect(paths.appData).toBe(isolatedRoot);
+    expect(paths.userData).toBe(path.join(isolatedRoot, 'codex-deck'));
+  } finally {
+    if (electron) await electron.close();
+    await removeIsolatedRoot(isolatedRoot);
   }
 });
