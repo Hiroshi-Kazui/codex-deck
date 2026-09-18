@@ -121,7 +121,7 @@ export type BridgeOptions = {
   env?: NodeJS.ProcessEnv;
   startupTimeoutMs?: number;
   spawnServer?: () => ChildProcess;
-  onProtocolMessage?: (source: 'app-server' | 'tui', message: Readonly<Record<string, unknown>>) => void;
+  onProtocolMessage?: (source: 'app-server' | 'tui' | 'app-server-write' | 'tui-write', message: Readonly<Record<string, unknown>>) => void;
 };
 
 export async function startBridge(options: BridgeOptions): Promise<Bridge> {
@@ -153,6 +153,7 @@ export async function startBridge(options: BridgeOptions): Promise<Bridge> {
       stdin.write(`${JSON.stringify(message)}\n`, (cause?: Error | null) => {
         if (cause) fail(new BridgeError(`App Server stdin write failed: ${cause.message}`, { cause }));
       });
+      options.onProtocolMessage?.('app-server-write', Object.freeze({ ...message }));
     } catch (cause) {
       const error = new BridgeError(`App Server stdin write failed: ${String(cause)}`, { cause });
       fail(error);
@@ -203,6 +204,8 @@ export async function startBridge(options: BridgeOptions): Promise<Bridge> {
       }
       const forwarded = `m0-server-${++nextId}`;
       serverRequests.set(key(forwarded), id);
+      try { options.onProtocolMessage?.('tui-write', Object.freeze({ ...message, id: forwarded })); }
+      catch (cause) { fail(new BridgeError(`Protocol observer failed: ${String(cause)}`, { cause })); return; }
       peer.send({ ...message, id: forwarded });
       return;
     }

@@ -4,6 +4,7 @@ if (process.env.FAKE_EXIT === '1') process.exit(7);
 let initialized = false;
 let initializeCount = 0;
 let lastServerAnswer;
+let lastZeroAnswer;
 for await (const line of createInterface({ input: process.stdin })) {
   const message = JSON.parse(line);
   if (message.method === 'initialize') {
@@ -16,13 +17,21 @@ for await (const line of createInterface({ input: process.stdin })) {
   } else if (message.method === 'test/serverRequest') {
     process.stdout.write(JSON.stringify({ id: message.id, result: { started: true } }) + '\n');
     process.stdout.write(JSON.stringify({ id: 1, method: 'approval/request', params: { message: 'ok?' } }) + '\n');
-} else if (message.method === 'test/emitUnknown') {
+} else if (message.method === 'test/serverRequestZero') {
+    process.stdout.write(JSON.stringify({ id: message.id, result: { started: true } }) + '\n');
+    process.stdout.write(JSON.stringify({ id: 0, method: 'approval/request', params: { availableDecisions: ['cancel'] } }) + '\n');
+  } else if (message.method === 'test/emitUnknown') {
     process.stdout.write(JSON.stringify({ id: message.id, result: {} }) + '\n');
     process.stdout.write(JSON.stringify({ method: 'future/serverNotice', params: { marker: 'server-to-tui' } }) + '\n');
   } else if (message.method === 'future/clientNotice') {
     process.stdout.write(JSON.stringify({ method: 'test/unknownReceived', params: message.params }) + '\n');
+  } else if (message.method === 'test/lastZeroAnswer') {
+    process.stdout.write(JSON.stringify({ id: message.id, result: lastZeroAnswer }) + '\n');
   } else if (message.method === 'test/lastAnswer') {
     process.stdout.write(JSON.stringify({ id: message.id, result: lastServerAnswer }) + '\n');
+  } else if (message.id === 0 && (message.result || message.error)) {
+    lastZeroAnswer = message.result ?? message.error;
+    process.stdout.write(JSON.stringify({ method: 'test/serverZeroAnswer', params: lastZeroAnswer }) + '\n');
   } else if (message.id === 1 && (message.result || message.error)) {
     lastServerAnswer = message.result ?? message.error;
     process.stdout.write(JSON.stringify({ method: 'test/serverAnswer', params: lastServerAnswer }) + '\n');

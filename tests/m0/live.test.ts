@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { access, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -10,7 +11,7 @@ import { resolveCodex, remoteTuiCommand } from '../../src/m0/cli.ts';
 type Json = Record<string, unknown>;
 type Pty = { write(data: string): void; kill(): void; onData(callback: (data: string) => void): void };
 type PtyModule = { spawn(file: string, args: string[], options: { name: string; cols: number; rows: number; cwd: string; env: Record<string, string> }): Pty };
-type Seen = { source: 'app-server' | 'tui'; method?: string; id?: string | number; threadId?: string; turnId?: string; itemType?: string; status?: string; decision?: string };
+type Seen = { source: 'app-server' | 'tui' | 'app-server-write' | 'tui-write'; method?: string; id?: string | number; threadId?: string; turnId?: string; itemType?: string; status?: string; decision?: string; availableDecisions?: string[] | null };
 const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 function obj(value: unknown): Json | undefined { return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Json : undefined; }
 function string(value: unknown): string | undefined { return typeof value === 'string' ? value : undefined; }
@@ -35,6 +36,10 @@ test('M0-03.LIVE: real Codex 0.154.0 TUI/App Server lifecycle and approval', { t
   const startedAt = new Date().toISOString();
   const outcomes: Record<string, unknown> = {};
   const seen: Seen[] = [];
+  const connectionGeneration = randomUUID();
+  const previousSystemDrive = process.env.SystemDrive;
+  const systemDrive = path.parse(cwd).root.slice(0, 2);
+  process.env.SystemDrive = systemDrive;
   let bridge: Bridge | undefined;
   let pty: Pty | undefined;
   let cliVersion = 'unresolved';
@@ -54,14 +59,16 @@ test('M0-03.LIVE: real Codex 0.154.0 TUI/App Server lifecycle and approval', { t
         const turn = obj(params?.turn);
         const item = obj(params?.item);
         const result = obj(message.result);
+        const availableDecisions = Array.isArray(params?.availableDecisions) ? params.availableDecisions.filter((decision): decision is string => typeof decision === 'string') : params?.availableDecisions === null || params?.availableDecisions === undefined ? null : undefined;
         seen.push({ source, method: string(message.method),
           id: typeof message.id === 'string' || typeof message.id === 'number' ? message.id : undefined,
           threadId: string(params?.threadId), turnId: string(params?.turnId) ?? string(turn?.id),
-          itemType: string(item?.type), status: string(turn?.status), decision: string(result?.decision) });
+          itemType: string(item?.type), status: string(turn?.status), decision: string(result?.decision), availableDecisions });
       },
     });
     const command = remoteTuiCommand(cli, cwd, bridge.url, bridge.token);
     const env = Object.fromEntries(Object.entries(command.env).filter((pair): pair is [string, string] => typeof pair[1] === 'string'));
+    env.SystemDrive = systemDrive;
     pty = ptyModule().spawn(command.executable, ['--config', trust, '--sandbox', 'read-only', '--ask-for-approval', 'on-request', ...command.args],
       { name: 'xterm-color', cols: 120, rows: 40, cwd, env });
     pty.onData((data) => { terminalTail = (terminalTail + data).slice(-4096); });
@@ -122,23 +129,46 @@ test('M0-03.LIVE: real Codex 0.154.0 TUI/App Server lifecycle and approval', { t
     const approval = await waitFor(() => seen.slice(approvalStartIndex).find((event) => event.source === 'app-server' &&
       (event.method === 'item/commandExecution/requestApproval' || event.method === 'item/fileChange/requestApproval') &&
       event.threadId === tuiTurn.threadId && event.turnId === tuiTurn.turnId), 'TUI turn approval request', 180_000);
-    pty.write('d');
-    const declined = await waitFor(() => seen.slice(approvalStartIndex).find((event) => event.source === 'tui' &&
-      event.decision === 'decline' && typeof event.id === 'string' && event.id.startsWith('m0-server-')),
-      'TUI approval decline response', 30_000);
-    await waitFor(() => seen.slice(approvalStartIndex).find((event) => event.source === 'app-server' &&
-      event.method === 'turn/completed' && event.threadId === tuiTurn.threadId && event.turnId === tuiTurn.turnId),
+    assert.notEqual(approval.id, undefined, 'approval request ID missing');
+    assert.notEqual(approval.availableDecisions, undefined, 'invalid availableDecisions shape');
+    const availableDecisions = approval.availableDecisions!;
+    const effectiveDecisions = availableDecisions ?? ['accept', 'acceptForSession', 'cancel'];
+    const rejectDecision = effectiveDecisions.includes('cancel') ? 'cancel'
+      : effectiveDecisions.includes('decline') ? 'decline' : undefined;
+    assert.ok(rejectDecision, 'No rejection in availableDecisions: ' + effectiveDecisions.join(', '));
+    const forwarded = await waitFor(() => seen.slice(approvalStartIndex).find((event) =>
+      event.source === 'tui-write' && event.method === approval.method && event.threadId === tuiTurn.threadId &&
+      event.turnId === tuiTurn.turnId), 'forwarded approval request ID');
+    assert.notEqual(forwarded.id, undefined, 'forwarded approval ID missing');
+    pty.write(rejectDecision === 'cancel' ? '\x1b' : 'd');
+    const rejected = await waitFor(() => seen.slice(approvalStartIndex).find((event) =>
+      event.source === 'tui' && event.id === forwarded.id &&
+      (event.decision === 'cancel' || event.decision === 'decline')),
+      'TUI approval rejection response', 30_000);
+    assert.ok(effectiveDecisions.includes(rejected.decision!), 'TUI chose an unavailable decision');
+    const upstream = await waitFor(() => seen.slice(approvalStartIndex).find((event) =>
+      event.source === 'app-server-write' && event.id === approval.id && event.decision === rejected.decision),
+      'approval response to App Server original ID', 30_000);
+    const completedApproval = await waitFor(() => seen.slice(approvalStartIndex).find((event) =>
+      event.source === 'app-server' && event.method === 'turn/completed' &&
+      event.threadId === tuiTurn.threadId && event.turnId === tuiTurn.turnId),
       'post-approval TUI turn completion', 180_000);
-    outcomes.approval = { requestMethod: approval.method, decision: declined.decision,
-      threadId: tuiTurn.threadId, turnId: tuiTurn.turnId };
+    assert.ok(completedApproval.status === 'completed' || completedApproval.status === 'interrupted', 'Unexpected approval turn status: ' + completedApproval.status);
+    outcomes.approval = { connectionGeneration, requestMethod: approval.method,
+      availableDecisions, effectiveDecisions, requestedDecision: rejectDecision, decision: rejected.decision,
+      appServerRequestId: approval.id, tuiRequestId: forwarded.id, appServerResponseId: upstream.id,
+      threadId: tuiTurn.threadId, turnId: tuiTurn.turnId, status: completedApproval.status };
     await assert.rejects(access(path.join(cwd, 'M0-03-approval-probe.txt')));
   } catch (cause) { failure = cause instanceof Error ? cause : new Error(String(cause)); }
-  finally { try { pty?.kill(); } catch { /* already exited */ } await bridge?.close(); }
+  finally { try { pty?.kill(); } catch { /* already exited */ } await bridge?.close();
+    if (previousSystemDrive === undefined) delete process.env.SystemDrive; else process.env.SystemDrive = previousSystemDrive; }
   const evidence = { task: 'M0-03', criterion: 'M0-03.LIVE', startedAt, finishedAt: new Date().toISOString(),
-    cliVersion, status: failure ? 'FAIL' : 'PASS', outcomes,
+    cliVersion, connectionGeneration, status: failure ? 'FAIL' : 'PASS', outcomes,
     protocol: seen.filter((event) => event.method === 'turn/completed' || event.method === 'item/started' ||
       event.method === 'item/commandExecution/requestApproval' || event.method === 'item/fileChange/requestApproval' ||
-      (event.source === 'tui' && event.decision !== undefined)),
+      (event.source === 'tui' && event.decision !== undefined) ||
+      (event.source === 'tui-write' && (event.method === 'item/commandExecution/requestApproval' || event.method === 'item/fileChange/requestApproval')) ||
+      (event.source === 'app-server-write' && event.decision !== undefined)),
     ...(failure ? { error: String(failure), trustPromptSeen: /Do you trust the contents of this directory\?/.test(terminalTail) } : {}) };
   await writeFile(path.join(evidenceDir, `live-${Date.now()}.json`), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
   if (failure) throw failure;

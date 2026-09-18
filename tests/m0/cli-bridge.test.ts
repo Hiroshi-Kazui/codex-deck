@@ -224,7 +224,14 @@ test('TUI disconnect rejects unanswered server request and allows reconnect', as
     assert.equal((await ws.next()).method, 'approval/request');
     ws.close();
     ws = await connectEventually(bridge.url, bridge.token);
-    ws.send({ id: 2, method: 'initialize' }); await ws.next(); await finishInit(ws);
+    ws.send({ id: 2, method: 'initialize' }); await ws.next();
+    ws.send({ method: 'initialized' }); ws.send({ id: 99, method: 'test/echo' });
+    let echo = await ws.next();
+    if (echo.id !== 99) {
+      assert.deepEqual(echo, { method: 'test/serverAnswer', params: { code: -32000, message: 'TUI connection lost' } });
+      echo = await ws.next();
+    }
+    assert.equal(echo.id, 99);
     assert.deepEqual(await bridge.request('test/lastAnswer'), { code: -32000, message: 'TUI connection lost' });
   } finally { ws?.close(); await bridge.close(); }
 });
@@ -328,4 +335,33 @@ test('four independent connections isolate IDs and reject stopped or crashed gen
     sockets.forEach((ws) => ws.close());
     await Promise.allSettled([...bridges, ...(replacement ? [replacement] : [])].map((bridge) => bridge.close()));
   }
+});
+
+test('concurrent approval responses preserve original IDs including zero', async () => {
+  const routed: { source: string; message: Readonly<Record<string, unknown>> }[] = [];
+  const bridge = await startBridge({ cli: fakeCli, cwd: process.cwd(), spawnServer: spawnFake,
+    onProtocolMessage: (source, message) => routed.push({ source, message }) });
+  let ws: TestWs | undefined;
+  try {
+    ws = await TestWs.connect(bridge.url, bridge.token);
+    ws.send({ id: 1, method: 'initialize' }); await ws.next(); await finishInit(ws);
+    await Promise.all([bridge.request('test/serverRequest'), bridge.request('test/serverRequestZero')]);
+    const approvals = [await ws.next(), await ws.next()];
+    const zero = approvals.find((message) => Array.isArray((message.params as Record<string, unknown>)?.availableDecisions));
+    const one = approvals.find((message) => message !== zero);
+    assert.ok(zero && one);
+    assert.equal(zero.method, 'approval/request');
+    assert.equal(one.method, 'approval/request');
+    assert.notEqual(zero.id, one.id);
+    ws.send({ id: zero.id, result: { decision: 'cancel' } });
+    ws.send({ id: one.id, result: { decision: 'decline' } });
+    const answers = [await ws.next(), await ws.next()];
+    assert.deepEqual(new Set(answers.map((answer) => answer.method)), new Set(['test/serverZeroAnswer', 'test/serverAnswer']));
+    assert.deepEqual(await bridge.request('test/lastZeroAnswer'), { decision: 'cancel' });
+    assert.deepEqual(await bridge.request('test/lastAnswer'), { decision: 'decline' });
+    assert.ok(routed.some(({ source, message }) => source === 'app-server-write' && message.id === 0 &&
+      (message.result as Record<string, unknown>)?.decision === 'cancel'));
+    assert.ok(routed.some(({ source, message }) => source === 'app-server-write' && message.id === 1 &&
+      (message.result as Record<string, unknown>)?.decision === 'decline'));
+  } finally { ws?.close(); await bridge.close(); }
 });
